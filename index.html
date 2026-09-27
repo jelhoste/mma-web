@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>MMA dans le navigateur</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#7a3b2e">
+<link rel="icon" href="icons/icon-192.png">
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/abcjs/6.4.4/abcjs-basic-min.js"></script>
+<style>
+  :root {
+    --paper:#f7f4ec; --ink:#1f2a24; --ink-soft:#4a564d;
+    --rule:#cdc4a8; --accent:#7a3b2e; --accent-soft:#e8ddc9; --error:#a8412f;
+    color-scheme: light dark;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:#1c1b17; --ink:#ece7d8; --ink-soft:#b7b09a;
+      --rule:#453f30; --accent:#d98f6f; --accent-soft:#33291f; --error:#e08770;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:#1c1b17; --ink:#ece7d8; --ink-soft:#b7b09a;
+    --rule:#453f30; --accent:#d98f6f; --accent-soft:#33291f; --error:#e08770;
+  }
+  html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+  * { box-sizing: border-box; }
+  body {
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family:"Iowan Old Style","Palatino Linotype",Georgia,"Noto Serif",serif;
+    line-height:1.5;
+  }
+  .wrap { max-width:820px; margin:0 auto; padding:2.2rem 1.5rem 4rem; }
+  h1 { font-size:1.6rem; font-weight:600; margin:0 0 0.3rem; }
+  .lede { color:var(--ink-soft); max-width:64ch; margin:0 0 1.6rem; font-size:1rem; }
+  .lede code { font-family: ui-monospace, Menlo, monospace; font-size:0.9em; }
+
+  .row { display:flex; gap:1rem; flex-wrap:wrap; align-items:flex-end; margin-bottom:1.2rem; }
+  .field label { display:block; font-size:0.75rem; color:var(--ink-soft); margin-bottom:0.25rem; }
+  .field input, .field select {
+    font-family: ui-monospace, Menlo, monospace; font-size:0.95rem;
+    padding:0.5rem 0.6rem; border:1px solid var(--rule); border-radius:3px;
+    background:transparent; color:var(--ink);
+  }
+
+  .staff-label { font-size:0.78rem; color:var(--ink-soft); border-bottom:1px solid var(--rule); padding-bottom:0.4rem; margin:1.4rem 0 0.9rem; }
+
+  .grid { display:grid; grid-template-columns:repeat(4,1fr); gap:0.6rem; margin-bottom:1.4rem; }
+  .cell label { display:block; font-size:0.72rem; color:var(--ink-soft); margin-bottom:0.25rem; }
+  .cell input { width:100%; font-family: ui-monospace, Menlo, monospace; font-size:1rem;
+    padding:0.5rem 0.55rem; border:1px solid var(--rule); border-radius:3px; background:transparent; color:var(--ink); }
+  .cell input:focus, .field input:focus, .field select:focus { outline:none; border-color:var(--accent); }
+
+  button {
+    font-family:inherit; font-size:0.95rem; background:var(--accent); color:var(--paper);
+    border:none; padding:0.62rem 1.3rem; border-radius:3px; cursor:pointer;
+  }
+  button:disabled { opacity:0.5; cursor:progress; }
+  button:hover:not(:disabled) { filter:brightness(1.08); }
+  button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  a.dl { color:var(--accent); text-decoration:underline; font-size:0.92rem; }
+
+  .status { min-height:1.2rem; font-size:0.88rem; margin:0.3rem 0 1rem; color:var(--ink-soft); }
+  .status.err { color:var(--error); }
+
+  .score-frame { background:#fffdf7; border:1px solid var(--rule); border-radius:4px; padding:1rem 0.6rem; margin-bottom:1.2rem; overflow-x:auto; min-height:60px; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .score-frame { background:#f4f0e4; } }
+  :root[data-theme="dark"] .score-frame { background:#f4f0e4; }
+
+  #log {
+    font-family: ui-monospace, Menlo, monospace; font-size:0.78rem; color:var(--ink-soft);
+    background: var(--accent-soft); border-radius:4px; padding:0.7rem 0.9rem;
+    max-height:160px; overflow-y:auto; white-space:pre-wrap; margin-bottom:1.4rem;
+  }
+
+  details { border-top:1px solid var(--rule); padding-top:1rem; color:var(--ink-soft); font-size:0.93rem; }
+  summary { cursor:pointer; color:var(--ink); margin-bottom:0.5rem; }
+  details code { font-family: ui-monospace, Menlo, monospace; background:var(--accent-soft); padding:0.05rem 0.3rem; border-radius:2px; font-size:0.88em; }
+
+  @media (max-width:520px){ .grid{ grid-template-columns:repeat(2,1fr); } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>MMA dans le navigateur</h1>
+  <p class="lede">
+    Le vrai moteur MMA (Musical MIDI Accompaniment) tourne ici entièrement côté client,
+    via Pyodide — pas de réimplémentation, c'est le même code Python que la version
+    installée en ligne de commande, avec toute sa bibliothèque de styles. Entre une grille
+    d'accords et un nom de groove, le moteur calcule le vrai arrangement.
+  </p>
+
+  <div class="row">
+    <div class="field">
+      <label for="tempo">Tempo</label>
+      <input id="tempo" type="number" value="120" min="40" max="300" style="width:5.5rem">
+    </div>
+    <div class="field">
+      <label for="groove">Groove (nom exact MMA)</label>
+      <input id="groove" list="grooveList" value="SwingWalk" style="width:12rem">
+      <datalist id="grooveList">
+        <option value="SwingWalk">
+        <option value="Swing">
+        <option value="BossaNova">
+        <option value="Blues">
+        <option value="8Beat">
+        <option value="JazzWaltz">
+        <option value="RockBallad">
+      </datalist>
+    </div>
+  </div>
+
+  <p class="staff-label">Grille (12 mesures)</p>
+  <div class="grid" id="chordGrid"></div>
+
+  <div class="row">
+    <button id="genBtn" disabled>Chargement du moteur…</button>
+    <span id="dlWrap"></span>
+  </div>
+  <div class="status" id="status"></div>
+  <div id="log"></div>
+
+  <div class="score-frame" id="score"></div>
+
+  <details>
+    <summary>À propos de ce portage</summary>
+    <p>Le dossier <code>usr/share/mma</code> livré avec cette page contient le moteur
+    MMA (<code>MMA/*.py</code>) et l'intégralité de sa bibliothèque de styles
+    (<code>lib/</code>), copiés tels quels depuis une installation MMA réelle — y compris
+    la base <code>.mmaDB</code> qui permet d'écrire juste <code>Groove NomDuStyle</code>
+    sans avoir à préciser quel fichier le définit. Le MIDI produit est ensuite décodé par
+    un petit analyseur écrit pour cette page afin d'en tirer une partition ; le fichier
+    MIDI original reste téléchargeable tel que MMA l'a réellement généré.</p>
+  </details>
+</div>
+
+<script>
+const PY_RUNNER = `
+import sys, json, struct, base64
+
+MMAdir = "/usr/share/mma"
+platform = "Linux"
+if MMAdir not in sys.path:
+    sys.path.insert(0, MMAdir)
+
+for _m in list(sys.modules):
+    if _m == "MMA" or _m.startswith("MMA."):
+        del sys.modules[_m]
+
+with open("/input.mma", "w") as f:
+    f.write(INPUT_SCRIPT)
+
+sys.argv = ["mma", "-f", "/output.mid", "/input.mma"]
+
+_error = None
+try:
+    import MMA.main
+except SystemExit:
+    pass
+except Exception as e:
+    _error = repr(e)
+
+def read_varlen(data, i):
+    value = 0
+    while True:
+        b = data[i]; i += 1
+        value = (value << 7) | (b & 0x7f)
+        if not (b & 0x80):
+            break
+    return value, i
+
+def parse_midi(data):
+    fmt, ntrks, division = struct.unpack(">HHH", data[8:14])
+    pos = 14
+    tracks = []
+    for _ in range(ntrks):
+        length = struct.unpack(">I", data[pos+4:pos+8])[0]
+        start = pos + 8
+        end = start + length
+        i = start
+        tick = 0
+        running = None
+        name = ""
+        active = {}
+        notes = []
+        while i < end:
+            delta, i = read_varlen(data, i)
+            tick += delta
+            status = data[i]
+            if status < 0x80:
+                status = running
+            else:
+                i += 1
+                if status < 0xF0:
+                    running = status
+            if status == 0xFF:
+                mtype = data[i]; i += 1
+                mlen, i = read_varlen(data, i)
+                mdata = data[i:i+mlen]; i += mlen
+                if mtype == 0x03 and not name:
+                    name = mdata.decode("latin1")
+            elif status in (0xF0, 0xF7):
+                slen, i = read_varlen(data, i)
+                i += slen
+            else:
+                hi = status & 0xF0
+                if hi in (0x80, 0x90, 0xA0, 0xB0, 0xE0):
+                    d1 = data[i]; d2 = data[i+1]; i += 2
+                    key = (status & 0x0F, d1)
+                    if hi == 0x90 and d2 > 0:
+                        active[key] = tick
+                    elif hi == 0x80 or (hi == 0x90 and d2 == 0):
+                        if key in active:
+                            s = active.pop(key)
+                            notes.append({"tick": s, "dur": tick - s, "note": d1})
+                elif hi in (0xC0, 0xD0):
+                    i += 1
+        tracks.append({"name": name, "notes": sorted(notes, key=lambda n: n["tick"])})
+        pos = end
+    return {"division": division, "tracks": tracks}
+
+result = {"error": _error}
+try:
+    with open("/output.mid", "rb") as f:
+        midi_bytes = f.read()
+    parsed = parse_midi(midi_bytes)
+    result["division"] = parsed["division"]
+    result["tracks"] = parsed["tracks"]
+    result["midi_b64"] = base64.b64encode(midi_bytes).decode("ascii")
+except FileNotFoundError:
+    pass
+
+json.dumps(result)
+`;
+
+let pyodideReady = null;
+
+function appendLog(s){
+  const el = document.getElementById("log");
+  el.textContent += s + "\n";
+  el.scrollTop = el.scrollHeight;
+}
+
+async function initPyodide(){
+  appendLog("Chargement de Pyodide…");
+  const pyodide = await loadPyodide({ stdout: appendLog, stderr: appendLog });
+  appendLog("Copie de MMA (moteur + bibliothèque) dans le système de fichiers virtuel…");
+  const manifest = await (await fetch("file-manifest.json")).json();
+  for(const entry of manifest){
+    const dir = entry.path.substring(0, entry.path.lastIndexOf("/"));
+    pyodide.FS.mkdirTree(dir);
+    const resp = await fetch(entry.path);
+    if(entry.binary){
+      const buf = new Uint8Array(await resp.arrayBuffer());
+      pyodide.FS.writeFile(entry.path, buf);
+    } else {
+      const text = await resp.text();
+      pyodide.FS.writeFile(entry.path, text);
+    }
+  }
+  appendLog("Prêt (" + manifest.length + " fichiers chargés).");
+  return pyodide;
+}
+
+function buildGrid(){
+  const defaults = ["Dm7","G7","Cmaj7","Cmaj7","Em7","A7","Dm7","Dm7","Gm7","C7","Fmaj7","Fmaj7"];
+  const grid = document.getElementById("chordGrid");
+  for(let i=0;i<12;i++){
+    const cell = document.createElement("div");
+    cell.className = "cell";
+    const label = document.createElement("label");
+    label.textContent = "Mesure " + (i+1);
+    label.setAttribute("for","bar"+i);
+    const input = document.createElement("input");
+    input.id = "bar"+i;
+    input.value = defaults[i];
+    cell.appendChild(label);
+    cell.appendChild(input);
+    grid.appendChild(cell);
+  }
+}
+
+const NAMES_SHARP = ["C","^C","D","^D","E","F","^F","G","^G","A","^A","B"];
+function midiToAbc(midi){
+  midi = Math.round(midi);
+  const octIndex = Math.floor((midi - 60) / 12);
+  const pc = midi - (60 + 12*octIndex);
+  const letter = NAMES_SHARP[pc];
+  if(octIndex === 0) return letter;
+  if(octIndex > 0){
+    const lower = letter.replace(/^\^?([A-G])/, (_, l) => l.toLowerCase());
+    return lower + "'".repeat(octIndex - 1);
+  }
+  return letter + ",".repeat(-octIndex);
+}
+
+function trackToAbcLine(track, division, nBars, chordSymbols, attachChords){
+  const gridTicks = Math.max(1, Math.round(division/4));
+  const totalCells = nBars*16;
+  const groups = {};
+  track.notes.forEach(n=>{
+    const startGrid = Math.round(n.tick/gridTicks);
+    const durGrid = Math.max(1, Math.round(n.dur/gridTicks));
+    if(startGrid >= totalCells) return;
+    if(!groups[startGrid]) groups[startGrid] = {notes:[], dur:durGrid};
+    groups[startGrid].notes.push(n.note);
+    groups[startGrid].dur = Math.max(groups[startGrid].dur, durGrid);
+  });
+  let out = "";
+  let cell = 0, restRun = 0;
+  function flushRest(){ if(restRun>0){ out += "z" + (restRun>1?restRun:"") + " "; restRun=0; } }
+  for(let bar=0; bar<nBars; bar++){
+    if(attachChords) out += '"' + chordSymbols[bar].replace(/"/g,"") + '" ';
+    const barEnd = (bar+1)*16;
+    while(cell < barEnd){
+      if(groups[cell]){
+        flushRest();
+        const g = groups[cell];
+        const pitches = g.notes.slice().sort((a,b)=>a-b).map(midiToAbc);
+        const durTok = g.dur>1 ? g.dur : "";
+        out += (pitches.length>1 ? "["+pitches.join("")+"]"+durTok : pitches[0]+durTok) + " ";
+        cell += g.dur;
+      } else {
+        restRun += 1; cell += 1;
+      }
+    }
+    flushRest();
+    out += "| ";
+  }
+  return out;
+}
+
+function renderScore(result, chordSymbols, tempo){
+  const target = document.getElementById("score");
+  target.innerHTML = "";
+  const pitched = (result.tracks || []).filter(t => t.notes.length && !/drum/i.test(t.name||""));
+  if(!pitched.length){
+    target.textContent = "Aucune piste mélodique/harmonique trouvée dans le MIDI généré.";
+    return;
+  }
+  const ids = pitched.map((_,i)=>"T"+i);
+  let header = "X:1\nT:Sortie du vrai moteur MMA\nM:4/4\nL:1/16\nQ:1/4=" + tempo + "\nK:C\n";
+  header += "%%score (" + ids.join(" ") + ")\n";
+  pitched.forEach((t,i)=>{
+    const clef = /bass|walk/i.test(t.name||"") ? "bass" : "treble";
+    const nm = (t.name || ("Piste "+(i+1))).replace(/"/g,"");
+    header += "V:" + ids[i] + ' clef=' + clef + ' name="' + nm + '"\n';
+  });
+  let body = "";
+  let chordAttached = false;
+  pitched.forEach((t,i)=>{
+    const attach = !chordAttached && /chord|piano/i.test(t.name||"");
+    if(attach) chordAttached = true;
+    body += "[V:" + ids[i] + "] " + trackToAbcLine(t, result.division, chordSymbols.length, chordSymbols, attach) + "\n";
+  });
+  if(!chordAttached && pitched.length){
+    // fallback: attach chords to the first voice if nothing matched "chord/piano"
+    const line0 = "[V:" + ids[0] + "] " + trackToAbcLine(pitched[0], result.division, chordSymbols.length, chordSymbols, true) + "\n";
+    body = line0 + body.split("\n").slice(1).join("\n");
+  }
+  try {
+    ABCJS.renderAbc(target, header + body, { responsive:"resize", staffwidth: 680 });
+  } catch(e){
+    target.textContent = "Erreur de rendu de la partition : " + e.message;
+  }
+}
+
+async function generate(){
+  const statusEl = document.getElementById("status");
+  const genBtn = document.getElementById("genBtn");
+  statusEl.className = "status";
+  statusEl.textContent = "Calcul en cours…";
+  genBtn.disabled = true;
+  document.getElementById("log").textContent = "";
+
+  const tempo = document.getElementById("tempo").value || "120";
+  const groove = document.getElementById("groove").value.trim() || "SwingWalk";
+  const chords = [];
+  for(let i=0;i<12;i++) chords.push(document.getElementById("bar"+i).value.trim() || "C");
+
+  let script = "Tempo " + tempo + "\nGroove " + groove + "\n";
+  chords.forEach((c,i) => script += (i+1) + " " + c + "\n");
+
+  try {
+    const pyodide = await pyodideReady;
+    pyodide.globals.set("INPUT_SCRIPT", script);
+    const resultJson = await pyodide.runPythonAsync(PY_RUNNER);
+    const result = JSON.parse(resultJson);
+
+    if(result.error){
+      statusEl.className = "status err";
+      statusEl.textContent = "MMA a signalé une erreur : " + result.error;
+    } else {
+      statusEl.textContent = "Arrangement généré avec le vrai moteur MMA.";
+    }
+
+    if(result.midi_b64){
+      const bin = atob(result.midi_b64);
+      const bytes = new Uint8Array(bin.length);
+      for(let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+      const blob = new Blob([bytes], {type:"audio/midi"});
+      const url = URL.createObjectURL(blob);
+      document.getElementById("dlWrap").innerHTML =
+        '<a class="dl" href="' + url + '" download="arrangement.mid">Télécharger le MIDI réel généré par MMA</a>';
+      renderScore(result, chords, tempo);
+    }
+  } catch(e){
+    statusEl.className = "status err";
+    statusEl.textContent = "Erreur : " + e.message;
+    appendLog(String(e));
+  } finally {
+    genBtn.disabled = false;
+  }
+}
+
+window.addEventListener("DOMContentLoaded", () => {
+  buildGrid();
+  document.getElementById("genBtn").addEventListener("click", generate);
+  pyodideReady = initPyodide().then(p => {
+    document.getElementById("genBtn").disabled = false;
+    document.getElementById("genBtn").textContent = "Générer l'arrangement";
+    return p;
+  }).catch(e => {
+    appendLog("Échec du chargement de Pyodide : " + e.message);
+  });
+  if("serviceWorker" in navigator){
+    navigator.serviceWorker.register("service-worker.js").catch(()=>{});
+  }
+});
+</script>
+</body>
+</html>
