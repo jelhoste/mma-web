@@ -253,13 +253,25 @@ async function initPyodide(){
   for(const entry of manifest){
     const dir = entry.path.substring(0, entry.path.lastIndexOf("/"));
     pyodide.FS.mkdirTree(dir);
-    const resp = await fetch(entry.path);
-    if(entry.binary){
-      const buf = new Uint8Array(await resp.arrayBuffer());
-      pyodide.FS.writeFile(entry.path, buf);
-    } else {
-      const text = await resp.text();
-      pyodide.FS.writeFile(entry.path, text);
+    let resp;
+    try {
+      resp = await fetch(entry.path);
+    } catch(fetchErr){
+      throw new Error("Échec réseau sur " + entry.path + " : " + fetchErr.message);
+    }
+    if(!resp.ok){
+      throw new Error("Fichier introuvable (" + resp.status + ") : " + entry.path);
+    }
+    try {
+      if(entry.binary){
+        const buf = new Uint8Array(await resp.arrayBuffer());
+        pyodide.FS.writeFile(entry.path, buf);
+      } else {
+        const text = await resp.text();
+        pyodide.FS.writeFile(entry.path, text);
+      }
+    } catch(writeErr){
+      throw new Error("Échec d'écriture pour " + entry.path + " : " + (writeErr && writeErr.message ? writeErr.message : JSON.stringify(writeErr)));
     }
   }
   appendLog("Prêt (" + manifest.length + " fichiers chargés).");
@@ -425,7 +437,7 @@ window.addEventListener("DOMContentLoaded", () => {
     document.getElementById("genBtn").textContent = "Générer l'arrangement";
     return p;
   }).catch(e => {
-    appendLog("Échec du chargement de Pyodide : " + e.message);
+    appendLog("Échec du chargement de Pyodide : " + (e && e.message ? e.message : String(e)));
   });
   if("serviceWorker" in navigator){
     navigator.serviceWorker.register("service-worker.js").catch(()=>{});
