@@ -251,7 +251,8 @@ async function initPyodide(){
   appendLog("Copie de MMA (moteur + bibliothèque) dans le système de fichiers virtuel…");
   const manifest = await (await fetch("file-manifest.json")).json();
   for(const entry of manifest){
-    const dir = entry.path.substring(0, entry.path.lastIndexOf("/"));
+    const vpath = "/" + entry.path;
+    const dir = vpath.substring(0, vpath.lastIndexOf("/"));
     pyodide.FS.mkdirTree(dir);
     let resp;
     try {
@@ -265,13 +266,13 @@ async function initPyodide(){
     try {
       if(entry.binary){
         const buf = new Uint8Array(await resp.arrayBuffer());
-        pyodide.FS.writeFile(entry.path, buf);
+        pyodide.FS.writeFile(vpath, buf);
       } else {
         const text = await resp.text();
-        pyodide.FS.writeFile(entry.path, text);
+        pyodide.FS.writeFile(vpath, text);
       }
     } catch(writeErr){
-      throw new Error("Échec d'écriture pour " + entry.path + " : " + (writeErr && writeErr.message ? writeErr.message : JSON.stringify(writeErr)));
+      throw new Error("Échec d'écriture pour " + vpath + " : " + (writeErr && writeErr.message ? writeErr.message : JSON.stringify(writeErr)));
     }
   }
   appendLog("Prêt (" + manifest.length + " fichiers chargés).");
