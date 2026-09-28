@@ -100,17 +100,16 @@
       <input id="tempo" type="number" value="120" min="40" max="300" style="width:5.5rem">
     </div>
     <div class="field">
-      <label for="groove">Groove (nom exact MMA)</label>
-      <input id="groove" list="grooveList" value="SwingWalk" style="width:12rem">
-      <datalist id="grooveList">
-        <option value="SwingWalk">
-        <option value="Swing">
-        <option value="BossaNova">
-        <option value="Blues">
-        <option value="8Beat">
-        <option value="JazzWaltz">
-        <option value="RockBallad">
-      </datalist>
+      <label for="family">Famille de styles (277)</label>
+      <select id="family" style="width:15rem"></select>
+    </div>
+    <div class="field">
+      <label for="variant">Groove</label>
+      <select id="variant" style="width:13rem"></select>
+    </div>
+    <div class="field">
+      <label for="groove">Nom utilisé (modifiable)</label>
+      <input id="groove" value="SwingWalk" style="width:12rem">
     </div>
   </div>
 
@@ -177,6 +176,7 @@ def parse_midi(data):
     fmt, ntrks, division = struct.unpack(">HHH", data[8:14])
     pos = 14
     tracks = []
+    timesig = [4, 4]
     for _ in range(ntrks):
         length = struct.unpack(">I", data[pos+4:pos+8])[0]
         start = pos + 8
@@ -203,6 +203,8 @@ def parse_midi(data):
                 mdata = data[i:i+mlen]; i += mlen
                 if mtype == 0x03 and not name:
                     name = mdata.decode("latin1")
+                elif mtype == 0x58 and len(mdata) >= 2:
+                    timesig = [mdata[0], 2 ** mdata[1]]
             elif status in (0xF0, 0xF7):
                 slen, i = read_varlen(data, i)
                 i += slen
@@ -221,7 +223,7 @@ def parse_midi(data):
                     i += 1
         tracks.append({"name": name, "notes": sorted(notes, key=lambda n: n["tick"])})
         pos = end
-    return {"division": division, "tracks": tracks}
+    return {"division": division, "tracks": tracks, "timesig": timesig}
 
 result = {"error": _error}
 try:
@@ -230,6 +232,7 @@ try:
     parsed = parse_midi(midi_bytes)
     result["division"] = parsed["division"]
     result["tracks"] = parsed["tracks"]
+    result["timesig"] = parsed["timesig"]
     result["midi_b64"] = base64.b64encode(midi_bytes).decode("ascii")
 except FileNotFoundError:
     pass
@@ -279,6 +282,40 @@ async function initPyodide(){
   return pyodide;
 }
 
+
+async function initGrooves(){
+  try {
+    const fam = await (await fetch("grooves.json")).json();
+    const famSel = document.getElementById("family");
+    const varSel = document.getElementById("variant");
+    const input = document.getElementById("groove");
+    const keys = Object.keys(fam).sort();
+    keys.forEach(k => {
+      const o = document.createElement("option");
+      o.value = k;
+      o.textContent = k + " (" + fam[k].length + ")";
+      famSel.appendChild(o);
+    });
+    function fillVariants(){
+      varSel.innerHTML = "";
+      fam[famSel.value].forEach(n => {
+        const o = document.createElement("option");
+        o.value = n; o.textContent = n;
+        varSel.appendChild(o);
+      });
+      input.value = varSel.value;
+    }
+    famSel.addEventListener("change", fillVariants);
+    varSel.addEventListener("change", () => { input.value = varSel.value; });
+    famSel.value = "stdlib/swing";
+    fillVariants();
+    varSel.value = "SwingWalk";
+    input.value = "SwingWalk";
+  } catch(e){
+    appendLog("Liste des grooves indisponible : " + e.message);
+  }
+}
+
 function buildGrid(){
   const defaults = ["Dm7","G7","Cmaj7","Cmaj7","Em7","A7","Dm7","Dm7","Gm7","C7","Fmaj7","Fmaj7"];
   const grid = document.getElementById("chordGrid");
@@ -311,9 +348,10 @@ function midiToAbc(midi){
   return letter + ",".repeat(-octIndex);
 }
 
-function trackToAbcLine(track, division, nBars, chordSymbols, attachChords){
+function trackToAbcLine(track, division, nBars, chordSymbols, attachChords, barCells){
+  barCells = barCells || 16;
   const gridTicks = Math.max(1, Math.round(division/4));
-  const totalCells = nBars*16;
+  const totalCells = nBars*barCells;
   const groups = {};
   track.notes.forEach(n=>{
     const startGrid = Math.round(n.tick/gridTicks);
@@ -328,7 +366,7 @@ function trackToAbcLine(track, division, nBars, chordSymbols, attachChords){
   function flushRest(){ if(restRun>0){ out += "z" + (restRun>1?restRun:"") + " "; restRun=0; } }
   for(let bar=0; bar<nBars; bar++){
     if(attachChords) out += '"' + chordSymbols[bar].replace(/"/g,"") + '" ';
-    const barEnd = (bar+1)*16;
+    const barEnd = (bar+1)*barCells;
     while(cell < barEnd){
       if(groups[cell]){
         flushRest();
@@ -356,7 +394,9 @@ function renderScore(result, chordSymbols, tempo){
     return;
   }
   const ids = pitched.map((_,i)=>"T"+i);
-  let header = "X:1\nT:Sortie du vrai moteur MMA\nM:4/4\nL:1/16\nQ:1/4=" + tempo + "\nK:C\n";
+  const ts = result.timesig || [4,4];
+  const barCells = Math.max(1, Math.round(16*ts[0]/ts[1]));
+  let header = "X:1\nT:Sortie du vrai moteur MMA\nM:" + ts[0] + "/" + ts[1] + "\nL:1/16\nQ:1/4=" + tempo + "\nK:C\n";
   header += "%%score (" + ids.join(" ") + ")\n";
   pitched.forEach((t,i)=>{
     const clef = /bass|walk/i.test(t.name||"") ? "bass" : "treble";
@@ -368,11 +408,11 @@ function renderScore(result, chordSymbols, tempo){
   pitched.forEach((t,i)=>{
     const attach = !chordAttached && /chord|piano/i.test(t.name||"");
     if(attach) chordAttached = true;
-    body += "[V:" + ids[i] + "] " + trackToAbcLine(t, result.division, chordSymbols.length, chordSymbols, attach) + "\n";
+    body += "[V:" + ids[i] + "] " + trackToAbcLine(t, result.division, chordSymbols.length, chordSymbols, attach, barCells) + "\n";
   });
   if(!chordAttached && pitched.length){
     // fallback: attach chords to the first voice if nothing matched "chord/piano"
-    const line0 = "[V:" + ids[0] + "] " + trackToAbcLine(pitched[0], result.division, chordSymbols.length, chordSymbols, true) + "\n";
+    const line0 = "[V:" + ids[0] + "] " + trackToAbcLine(pitched[0], result.division, chordSymbols.length, chordSymbols, true, barCells) + "\n";
     body = line0 + body.split("\n").slice(1).join("\n");
   }
   try {
@@ -432,6 +472,7 @@ async function generate(){
 
 window.addEventListener("DOMContentLoaded", () => {
   buildGrid();
+  initGrooves();
   document.getElementById("genBtn").addEventListener("click", generate);
   pyodideReady = initPyodide().then(p => {
     document.getElementById("genBtn").disabled = false;

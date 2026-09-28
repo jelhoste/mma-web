@@ -1,5 +1,5 @@
-const CACHE_NAME = "mma-web-v1";
-const APP_SHELL = ["./", "index.html", "manifest.json", "file-manifest.json"];
+const CACHE_NAME = "mma-web-v2";
+const APP_SHELL = ["./", "index.html", "manifest.json", "file-manifest.json", "grooves.json"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
